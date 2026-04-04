@@ -305,26 +305,25 @@ CLAUDE_PROMPT="Read the task JSON from ${IPC_DIR}/inbox/${AGENT_ID}/ and execute
 chmod +x "$LAUNCHER"
 log_info "Launcher script written: ${LAUNCHER}"
 
-# ─── cmux workspace 생성 + 런처 실행 ────────────────
-# new-workspace --command 는 workspace 생성과 동시에 명령을 실행한다.
-# send + send-key 방식보다 안정적이며, 에이전트가 별도 탭에서 동작하는 것이 보인다.
-log_info "Creating workspace for agent: ${AGENT_ID}"
+# ─── cmux 분할 창에서 런처 실행 ────────────────────────
+# 현재 workspace 내에서 split pane으로 생성하여 바로 옆에서 볼 수 있도록 한다.
+log_info "Creating split pane: direction=${DIRECTION}, agent=${AGENT_ID}"
 
-WS_OUTPUT="$(cmux_run new-workspace \
-  --name "[Agent] ${ROLE}" \
-  --cwd "${PROJECT_CWD}" \
-  --command "bash ${LAUNCHER}" 2>&1)"
-
-# workspace 출력에서 surface ID 추출
-SURFACE_ID="$(echo "$WS_OUTPUT" | grep -oE 'surface:[0-9]+' | head -1 || echo "")"
+SPLIT_OUTPUT="$(cmux_run new-split "$DIRECTION" 2>&1)"
+SURFACE_ID="$(echo "$SPLIT_OUTPUT" | grep -oE 'surface:[0-9]+' | head -1 || echo "")"
 
 if [[ -z "$SURFACE_ID" ]]; then
-  # tree에서 가장 최근 workspace의 surface 찾기
   sleep 0.5
-  SURFACE_ID="$(cmux_run tree --all 2>/dev/null | grep 'surface:' | tail -1 | grep -oE 'surface:[0-9]+' | head -1 || echo "unknown")"
+  SURFACE_ID="$(cmux_run tree 2>/dev/null | grep 'surface:' | tail -1 | grep -oE 'surface:[0-9]+' | head -1 || echo "unknown")"
 fi
 
-log_info "Workspace created: surface=${SURFACE_ID}"
+log_info "Split pane created: surface=${SURFACE_ID}"
+
+# 새 pane에 런처 명령 전송
+sleep 0.8
+cmux_run send --surface "$SURFACE_ID" "bash ${LAUNCHER}"
+sleep 0.3
+cmux_run send-key --surface "$SURFACE_ID" enter
 
 # ─── 에이전트 등록 (workspace 생성 후 정확한 surface_id로) ──
 REGISTRY_JSON=$(jq -n \

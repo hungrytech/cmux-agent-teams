@@ -10,7 +10,7 @@ description: >-
   "에이��트 팀", "병렬 실행", "멀티 에이전트", "cmux team", "spawn agents",
   "병렬 개발", "에이전트 협업".
 version: 0.1.3
-argument-hint: "[pipeline|fanout|feedback|hybrid] <task-description>"
+argument-hint: "[pipeline|fanout|feedback|hybrid] [--sub-agents] <task-description>"
 user-invocable: true
 allowed-tools:
   - Read
@@ -112,6 +112,14 @@ Phase 5: Cleanup  ─── IPC 디렉터리 정리, pane 종료 (선택)
 | `templates/orchestration-plan.md` | 실행 계획서 |
 | `templates/session-report.md` | 최종 보고서 |
 
+## 글로벌 옵션
+
+| 옵션 | 기본값 | 설명 |
+|------|--------|------|
+| `--sub-agents` | off | 각 에이전트가 내부적으로 서브에이전트를 스폰할 수 있도록 활성화 |
+
+모든 실행 모드에서 사용 가능. `--sub-agents`를 붙이면 spawn되는 모든 에이전트에 `--sub-agents` 플래그가 전달됨.
+
 ## 실행 모드
 
 ### 1. 자동 모드 (기본)
@@ -120,10 +128,15 @@ Phase 5: Cleanup  ─── IPC 디렉터리 정리, pane 종료 (선택)
 ```
 Plan → Spawn → Execute → Collect → Cleanup 전체 자동 실행
 
+**서브에이전트 활성화:**
+```
+/cmux-agent-teams pipeline --sub-agents "User API 설계 → 백엔드 구현 → 프론트 연동"
+```
+
 ### 2. 수동 모드
 ```
 /cmux-agent-teams spawn --role "backend" --task "API 구현"
-/cmux-agent-teams spawn --role "frontend" --task "연동"
+/cmux-agent-teams spawn --role "backend" --task "API 구현" --sub-agents
 /cmux-agent-teams monitor
 /cmux-agent-teams collect
 ```
@@ -132,8 +145,18 @@ Plan → Spawn → Execute → Collect → Cleanup 전체 자동 실행
 ### 3. P2P 모드
 ```
 /cmux-agent-teams p2p --agents "model:Entity설계,service:Service구현,controller:Controller구현"
+/cmux-agent-teams p2p --sub-agents --agents "model:Entity설계,service:Service구현"
 ```
 에이전트끼리 자율 조율
+
+### --sub-agents 사용 가이드
+
+| 상황 | 권장 |
+|------|------|
+| 단순한 작업 (파일 몇 개 생성) | 기본 (서브에이전트 없이) |
+| 복잡한 작업 (프로젝트 생성, 다수 파일) | `--sub-agents` 활성화 |
+| 토큰 절약이 중요한 경우 | 기본 |
+| 속도가 중요한 경우 | `--sub-agents` 활성화 |
 
 ## Phase 1: Plan 상세
 

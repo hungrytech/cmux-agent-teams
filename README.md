@@ -8,11 +8,11 @@
 
 ### Fanout — 병렬 실행 데모
 
-![Fanout 병렬 실행 데모](fanout.gif)
+![Fanout 병렬 실행 데모](docs/fanout.gif)
 
 ### Pipeline — 순차 파이프라인 데모
 
-![Pipeline 순차 파이프라인 데모](pipeline.gif)
+![Pipeline 순차 파이프라인 데모](docs/pipeline.gif)
 
 ---
 

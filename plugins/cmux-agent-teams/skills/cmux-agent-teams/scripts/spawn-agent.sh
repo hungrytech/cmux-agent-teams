@@ -319,11 +319,9 @@ fi
 
 log_info "Split pane created: surface=${SURFACE_ID}"
 
-# 새 pane에 런처 명령 전송
-sleep 0.8
-cmux_run send --surface "$SURFACE_ID" "bash ${LAUNCHER}"
+# respawn-pane으로 직접 명령 실행 (send+send-key 타이밍 문제 회피)
 sleep 0.3
-cmux_run send-key --surface "$SURFACE_ID" enter
+cmux_run respawn-pane --surface "$SURFACE_ID" --command "bash ${LAUNCHER}"
 
 # ─── 에이전트 등록 (workspace 생성 후 정확한 surface_id로) ──
 REGISTRY_JSON=$(jq -n \

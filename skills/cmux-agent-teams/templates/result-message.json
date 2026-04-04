@@ -1,0 +1,25 @@
+{
+  "id": "{{MSG_UUID}}",
+  "type": "result",
+  "from": "{{AGENT_ID}}",
+  "to": "orchestrator",
+  "timestamp": "{{TIMESTAMP}}",
+  "payload": {
+    "status": "completed|partial|failed",
+    "result_summary": "작업 결과 요약",
+    "artifacts": [
+      "생성/수정한 파일 경로 목록"
+    ],
+    "metrics": {
+      "files_created": 0,
+      "files_modified": 0,
+      "duration_seconds": 0
+    },
+    "error": null
+  },
+  "metadata": {
+    "session_id": "{{SESSION_ID}}",
+    "reply_to": "{{ORIGINAL_TASK_MSG_ID}}",
+    "agent_role": "{{ROLE}}"
+  }
+}

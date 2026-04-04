@@ -1,0 +1,18 @@
+{
+  "name": "cmux-agent-teams",
+  "description": "Multi-agent parallel execution via cmux panes with file-based IPC message bus and signal synchronization",
+  "version": "1.0.0",
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "SCRIPT_DIR=\"$(cd \"$(dirname \"$0\")/../skills/cmux-agent-teams/scripts\" 2>/dev/null && pwd)\"; [ -f \"$SCRIPT_DIR/cleanup-session.sh\" ] && bash \"$SCRIPT_DIR/cleanup-session.sh\" --auto 2>/dev/null || true"
+          }
+        ]
+      }
+    ]
+  }
+}

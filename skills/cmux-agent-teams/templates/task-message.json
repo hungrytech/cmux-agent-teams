@@ -1,0 +1,25 @@
+{
+  "id": "{{MSG_UUID}}",
+  "type": "task",
+  "from": "{{FROM}}",
+  "to": "{{AGENT_ID}}",
+  "timestamp": "{{TIMESTAMP}}",
+  "payload": {
+    "task_description": "{{TASK_DESCRIPTION}}",
+    "context": {
+      "project_root": "{{PROJECT_CWD}}",
+      "dependency_results": [],
+      "constraints": "{{CONSTRAINTS}}"
+    },
+    "peers": [],
+    "artifacts": [],
+    "status": "pending",
+    "timeout_seconds": 300
+  },
+  "metadata": {
+    "session_id": "{{SESSION_ID}}",
+    "sequence": 1,
+    "reply_to": null,
+    "stage": "{{STAGE_NAME}}"
+  }
+}

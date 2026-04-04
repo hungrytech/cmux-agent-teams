@@ -9,7 +9,7 @@ description: >-
   Activated by keywords: "agent team", "parallel agents", "multi-agent",
   "에이��트 팀", "병렬 실행", "멀티 에이전트", "cmux team", "spawn agents",
   "병렬 개발", "에이전트 협업".
-version: 0.1.0
+version: 0.1.1
 argument-hint: "[pipeline|fanout|feedback|hybrid] <task-description>"
 user-invocable: true
 allowed-tools:

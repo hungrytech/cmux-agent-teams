@@ -20,6 +20,7 @@
 - [메시지 포맷 레퍼런스](#메시지-포맷-레퍼런스)
 - [시그널 네이밍 컨벤션](#시그널-네이밍-컨벤션)
 - [Peer-to-Peer 통신](#peer-to-peer-통신)
+- [서브에이전트 (teammateMode)](#서브에이전트-teammatemode)
 - [외부 스킬 연동](#외부-스킬-연동)
 - [제한사항 및 트러블슈팅](#제한사항-및-트러블슈팅)
 - [라이선스](#라이선스)
@@ -967,6 +968,116 @@ ls ~/.claude/cmux-agent-ipc/${SESSION}/registry/
 # 특정 역할의 에이전트 찾기
 cat ~/.claude/cmux-agent-ipc/${SESSION}/registry/*.json | jq 'select(.role | contains("backend"))'
 ```
+
+---
+
+## 서브에이전트 (teammateMode)
+
+### 개요
+
+cmux-agent-teams가 생성하는 각 에이전트는 단순한 단일 Claude 세션이 아닙니다. 각 에이전트는 Claude Code의 **Agent Teams** 기능이 활성화된 상태로 실행되어, 자신의 작업을 더 작은 서브에이전트로 분할하여 병렬 처리할 수 있습니다.
+
+이를 통해 **2단계 병렬화**가 가능합니다:
+- **1단계**: cmux-agent-teams가 작업을 여러 에이전트로 분할 (cmux split pane)
+- **2단계**: 각 에이전트가 내부적으로 더 작은 서브에이전트를 스폰 (in-process)
+
+### 동작 구조
+
+```
+cmux-agent-teams (오케스트레이터)
+│
+├── [cmux split] Agent: backend-model
+│   └── Claude Code (teammateMode: in-process)
+│       ├── Sub-agent: User Entity 설계
+│       ├── Sub-agent: Order Entity 설계
+│       └── Sub-agent: Payment Entity 설계
+│
+├── [cmux split] Agent: backend-service
+│   └── Claude Code (teammateMode: in-process)
+│       ├── Sub-agent: UserService 구현
+│       ├── Sub-agent: OrderService 구현
+│       └── Sub-agent: 통합 테스트 작성
+│
+└── [cmux split] Agent: frontend
+    └── Claude Code (teammateMode: in-process)
+        ├── Sub-agent: API 클라이언트 훅 생성
+        ├── Sub-agent: 페이지 컴포넌트 작성
+        └── Sub-agent: 스토어 설정
+```
+
+### 자동 설정
+
+각 에이전트 생성 시 `spawn-agent.sh`가 자동으로 다음 설정을 포함한 `settings.json`을 생성하여 전달합니다:
+
+```json
+{
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
+  "teammateMode": "in-process",
+  "permissions": {
+    "allow": ["Agent", "Bash", "Read", "Write", "Edit", "Glob", "Grep"]
+  }
+}
+```
+
+| 설정 | 값 | 설명 |
+|------|-----|------|
+| `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` | `"1"` | Claude Code Agent Teams 기능 활성화 |
+| `teammateMode` | `"in-process"` | 서브에이전트가 같은 터미널 내에서 실행 (별도 터미널 불필요) |
+| `permissions.allow` | `["Agent", ...]` | Agent 도구를 포함한 주요 도구 사용 허용 |
+
+### teammateMode 옵션
+
+| 모드 | 동작 | cmux-agent-teams 기본값 |
+|------|------|------------------------|
+| `in-process` | 서브에이전트가 같은 터미널에서 실행 | **O (기본)** |
+| `tmux` | 서브에이전트가 tmux/iTerm2 split pane에서 실행 | - |
+| `auto` | 환경에 따라 자동 선택 | - |
+
+cmux-agent-teams에서는 `in-process`가 기본값입니다. 각 에이전트가 이미 별도 cmux pane에서 실행되고 있으므로, 서브에이전트까지 추가 pane을 만들면 화면이 과도하게 분할됩니다. `in-process`는 서브에이전트를 같은 pane 내에서 조용히 실행합니다.
+
+### 언제 서브에이전트가 유용한가
+
+각 에이전트의 시스템 프롬프트에 "작업이 크면 Agent 도구로 서브에이전트를 적극 활용하세요"라는 안내가 포함됩니다. Claude는 다음과 같은 상황에서 자동으로 서브에이전트를 생성합니다:
+
+**파일 탐색/분석이 필요할 때:**
+- 기존 코드베이스를 분석하면서 동시에 새 코드를 작성
+- 여러 디렉터리의 패턴을 조사하여 일관성 있는 코드 생성
+
+**독립적인 서브태스크가 있을 때:**
+- Entity 3개를 각각 서브에이전트에 위임하여 병렬 생성
+- 구현과 테스트를 동시에 진행
+
+**복잡한 리서치가 필요할 때:**
+- API 문서를 조사하는 서브에이전트 + 코드를 작성하는 메인 에이전트
+- 의존성 분석 서브에이전트 + 마이그레이션 스크립트 작성 메인 에이전트
+
+### 예시: 백엔드 에이전트의 서브에이전트 활용
+
+cmux-agent-teams가 `backend-model` 에이전트를 스폰하면, 해당 에이전트 내부에서:
+
+```
+[Agent: backend-model] cmux split pane에서 실행 중
+
+Claude: "Entity 3개를 설계해야 합니다. 서브에이전트를 활용하겠습니다."
+
+  → Sub-agent (Explore): "기존 프로젝트의 Entity 패턴 분석"
+    ← 결과: "JPA + Kotlin data class 패턴 사용 중"
+
+  → Sub-agent (general-purpose): "User Entity 생성"
+    ← 결과: User.kt 생성 완료
+
+  → Sub-agent (general-purpose): "Order Entity 생성"  
+    ← 결과: Order.kt 생성 완료
+
+Claude: "모든 Entity 생성 완료. 결과를 outbox에 기록합니다."
+  → outbox에 result.json 작성
+  → 백그라운드 모니터가 감지 → 시그널 전송
+  → 오케스트레이터가 다음 파이프라인 단계로 진행
+```
+
+이 과정이 cmux split pane에서 실시간으로 보입니다.
 
 ---
 

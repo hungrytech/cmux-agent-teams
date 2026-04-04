@@ -232,14 +232,38 @@ cmux wait-for -S "${SESSION_ID}:agent:${AGENT_ID}:done"
 cmux wait-for -S "${SESSION_ID}:agent:${AGENT_ID}:error"
 \`\`\`
 ${PEER_INSTRUCTIONS}
-## 중요 규칙
-1. 작업 범위를 벗어나지 마세요
-2. 결과 파일에는 생성/수정한 모든 파일 경로를 기록하세요
-3. **작업이 끝나면 반드시 아래 두 단계를 순서대로 실행하세요:**
-   - 먼저: result JSON을 outbox에 작성
-   - 그 다음: \`cmux wait-for -S "${SESSION_ID}:agent:${AGENT_ID}:done"\` 실행
+## 중요 규칙 (반드시 따르세요)
+1. 작업 시작 전에 먼저 inbox의 JSON 파일을 읽어서 task_description을 확인하세요
+2. 작업 범위를 벗어나지 마세요
+3. 결과 파일에는 생성/수정한 모든 파일 경로를 기록하세요
 4. 타임아웃: ${TIMEOUT}초 내에 작업을 완료하세요
-5. 작업 시작 전에 먼저 inbox의 JSON 파일을 읽어서 task_description을 확인하세요
+
+## !! 작업 완료 시 반드시 실행할 것 (가장 중요) !!
+작업이 모두 끝나면 **반드시** 아래 두 명령을 Bash 도구로 **순서대로** 실행하세요:
+
+**Step 1**: result JSON 파일 작성
+\`\`\`bash
+cat > ${IPC_DIR}/outbox/${AGENT_ID}.result.json << 'RESULTEOF'
+{
+  "id": "result-1",
+  "type": "result",
+  "from": "${AGENT_ID}",
+  "to": "orchestrator",
+  "payload": {
+    "status": "completed",
+    "result_summary": "여기에 작업 결과 요약 작성",
+    "artifacts": ["생성한 파일 경로들"]
+  }
+}
+RESULTEOF
+\`\`\`
+
+**Step 2**: 완료 시그널 전송
+\`\`\`bash
+cmux wait-for -S "${SESSION_ID}:agent:${AGENT_ID}:done"
+\`\`\`
+
+이 두 단계를 실행하지 않으면 오케스트레이터가 영원히 대기합니다.
 PROMPT_EOF
 
 log_info "System prompt written: ${PROMPT_FILE}"
@@ -268,22 +292,14 @@ CLAUDE_PROMPT="Read the task JSON from ${IPC_DIR}/inbox/${AGENT_ID}/ and execute
   echo "echo '[launcher] Working directory: ${PROJECT_CWD}'"
   echo "cd '${PROJECT_CWD}'"
   echo ""
-  echo "echo '[launcher] Running Claude Code...'"
-  echo "claude -p ${CLAUDE_OPTS} '${CLAUDE_PROMPT}'"
+  echo "echo '[launcher] Running Claude Code (interactive mode)...'"
+  echo "echo '[launcher] Agent will work in this terminal. Watch the progress below.'"
+  echo "echo '---'"
   echo ""
-  echo "echo '[launcher] Claude exited. Checking result...'"
-  echo ""
-  echo "# fallback: 결과 파일이 없으면 기본 결과 생성"
-  echo "if [ ! -f '${IPC_DIR}/outbox/${AGENT_ID}.result.json' ]; then"
-  echo "  echo '[launcher] No result file found, creating fallback result'"
-  echo "  TIMESTAMP=\$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  echo "  printf '{\"id\":\"auto\",\"type\":\"result\",\"from\":\"${AGENT_ID}\",\"to\":\"orchestrator\",\"timestamp\":\"%s\",\"payload\":{\"status\":\"completed\",\"result_summary\":\"Agent completed (auto-result)\",\"artifacts\":[],\"metrics\":{}}}' \"\$TIMESTAMP\" > '${IPC_DIR}/outbox/${AGENT_ID}.result.json'"
-  echo "fi"
-  echo ""
-  echo "# fallback 시그널 전송"
-  echo "echo '[launcher] Sending done signal...'"
-  echo "cmux wait-for -S '${SESSION_ID}:agent:${AGENT_ID}:done' 2>/dev/null || true"
-  echo "echo '[launcher] Done.'"
+  echo "# 대화형 모드: 에이전트 작업 과정이 실시간으로 보인다"
+  echo "# --dangerously-skip-permissions: 도구 사용 시 권한 요청 없이 진행"
+  echo "# 프롬프트를 인자로 전달하면 자동으로 첫 메시지가 제출됨"
+  echo "claude --dangerously-skip-permissions --append-system-prompt-file '${PROMPT_FILE}' '${CLAUDE_PROMPT}'"
 } > "$LAUNCHER"
 
 chmod +x "$LAUNCHER"

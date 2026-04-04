@@ -283,46 +283,32 @@ fi
 
 CLAUDE_PROMPT="Read the task JSON from ${IPC_DIR}/inbox/${AGENT_ID}/ and execute the task_description. When finished, write your result JSON to ${IPC_DIR}/outbox/${AGENT_ID}.result.json and then run this exact Bash command: cmux wait-for -S ${SESSION_ID}:agent:${AGENT_ID}:done"
 
-# 런처 스크립트를 직접 echo로 생성 (heredoc 중첩 문제 회피)
+# 런처 스크립트 생성
 {
   echo '#!/usr/bin/env bash'
   echo ""
-  echo "echo '=== [Agent: ${ROLE}] ==='"
-  echo "echo 'ID: ${AGENT_ID}'"
-  echo "echo 'CWD: ${PROJECT_CWD}'"
-  echo "echo ''"
   echo "cd '${PROJECT_CWD}'"
   echo ""
-  echo "# stream-json + -p 모드: 실시간 진행 표시 + 완료 후 자동 종료"
-  echo "claude -p --dangerously-skip-permissions --verbose --output-format stream-json \\"
-  echo "  --append-system-prompt-file '${PROMPT_FILE}' \\"
-  echo "  '${CLAUDE_PROMPT}' 2>/dev/null | \\"
-  echo "while IFS= read -r line; do"
-  echo '  type=$(echo "$line" | jq -r ".type // empty" 2>/dev/null)'
-  echo '  case "$type" in'
-  echo '    assistant)'
-  echo '      echo "$line" | jq -r ".message.content[]? | if .type == \"tool_use\" then \"⚡ \" + .name + \": \" + (.input | tostring | .[0:120]) elif .type == \"text\" then .text else empty end" 2>/dev/null'
-  echo '      ;;'
-  echo '    result)'
-  echo '      echo ""'
-  echo '      echo "✅ Agent 작업 완료"'
-  echo '      ;;'
-  echo '  esac'
-  echo "done"
+  echo "# 백그라운드 모니터: outbox에 결과 파일이 생기면 자동으로 시그널 전송"
+  echo "("
+  echo "  while [ ! -f '${IPC_DIR}/outbox/${AGENT_ID}.result.json' ]; do"
+  echo "    sleep 3"
+  echo "  done"
+  echo "  sleep 2"
+  echo "  cmux wait-for -S '${SESSION_ID}:agent:${AGENT_ID}:done' 2>/dev/null || true"
+  echo ") &"
+  echo "MONITOR_PID=\$!"
   echo ""
-  echo "echo ''"
-  echo "echo '=== [Agent: ${ROLE}] 완료 ==='"
+  echo "# 대화형 모드: 전체 Claude Code TUI가 그대로 보임"
+  echo "claude --dangerously-skip-permissions --append-system-prompt-file '${PROMPT_FILE}' '${CLAUDE_PROMPT}'"
   echo ""
-  echo "# 결과 파일이 없으면 기본 결과 생성"
+  echo "# Claude 종료 시 (사용자가 /exit 등으로 나간 경우) fallback"
+  echo "kill \$MONITOR_PID 2>/dev/null || true"
   echo "if [ ! -f '${IPC_DIR}/outbox/${AGENT_ID}.result.json' ]; then"
   echo "  TIMESTAMP=\$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "  printf '{\"id\":\"auto\",\"type\":\"result\",\"from\":\"${AGENT_ID}\",\"to\":\"orchestrator\",\"timestamp\":\"%s\",\"payload\":{\"status\":\"completed\",\"result_summary\":\"Agent completed (auto-result)\",\"artifacts\":[],\"metrics\":{}}}' \"\$TIMESTAMP\" > '${IPC_DIR}/outbox/${AGENT_ID}.result.json'"
   echo "fi"
-  echo ""
-  echo "# 완료 시그널 전송 → 오케스트레이터가 다음 단계로 진행"
-  echo "echo 'Sending done signal...'"
   echo "cmux wait-for -S '${SESSION_ID}:agent:${AGENT_ID}:done' 2>/dev/null || true"
-  echo "echo 'Pipeline will continue to next step.'"
 } > "$LAUNCHER"
 
 chmod +x "$LAUNCHER"

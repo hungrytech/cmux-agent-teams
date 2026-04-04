@@ -120,24 +120,24 @@ Claude Code의 플러그인 마켓플레이스 시스템을 통해 GitHub에서 
 /plugin marketplace add hungrytech/cmux-agent-teams
 
 # 2. 플러그인 설치
-/plugin install cmux-agent-teams@hungrytech-cmux-agent-teams
+/plugin install cmux-agent-teams@cmux-agent-teams
 ```
 
 또는 CLI에서 직접:
 
 ```bash
 claude plugin marketplace add hungrytech/cmux-agent-teams
-claude plugin install cmux-agent-teams@hungrytech-cmux-agent-teams
+claude plugin install cmux-agent-teams@cmux-agent-teams
 ```
 
 #### 설치 범위 (Scope) 지정
 
 ```bash
 # 나만 사용 (기본)
-/plugin install cmux-agent-teams@hungrytech-cmux-agent-teams --scope user
+/plugin install cmux-agent-teams@cmux-agent-teams --scope user
 
 # 프로젝트 팀원 전체가 사용 (프로젝트 .claude/settings.json에 기록)
-/plugin install cmux-agent-teams@hungrytech-cmux-agent-teams --scope project
+/plugin install cmux-agent-teams@cmux-agent-teams --scope project
 ```
 
 `--scope project`로 설치하면 `.claude/settings.json`에 플러그인 정보가 기록되어,
@@ -157,7 +157,7 @@ claude plugin install cmux-agent-teams@hungrytech-cmux-agent-teams
 ```json
 {
   "extraKnownMarketplaces": {
-    "hungrytech-cmux-agent-teams": {
+    "cmux-agent-teams": {
       "source": {
         "source": "github",
         "repo": "hungrytech/cmux-agent-teams"
@@ -165,7 +165,7 @@ claude plugin install cmux-agent-teams@hungrytech-cmux-agent-teams
     }
   },
   "enabledPlugins": {
-    "cmux-agent-teams@hungrytech-cmux-agent-teams": true
+    "cmux-agent-teams@cmux-agent-teams": true
   }
 }
 ```
@@ -188,7 +188,8 @@ git clone https://github.com/hungrytech/cmux-agent-teams.git ~/cmux-agent-teams
 설치 없이 일회성으로 사용하거나, 개발 중 테스트할 때 적합합니다.
 
 ```bash
-claude --plugin-dir ~/cmux-agent-teams
+# 플러그인 디렉터리를 직접 지정 (plugins/ 하위의 실제 플러그인 경로)
+claude --plugin-dir ~/cmux-agent-teams/plugins/cmux-agent-teams
 ```
 
 ### 설치 확인
@@ -234,11 +235,11 @@ Claude가 자동으로:
 
 ```bash
 # 1. 세션 초기화
-SESSION=$(bash ~/cmux-agent-teams/skills/cmux-agent-teams/scripts/init-session.sh)
+SESSION=$(bash ~/cmux-agent-teams/plugins/cmux-agent-teams/skills/cmux-agent-teams/scripts/init-session.sh)
 export CMUX_AGENT_SESSION=$SESSION
 
 # 2. 에이전트 생성
-SCRIPTS=~/cmux-agent-teams/skills/cmux-agent-teams/scripts
+SCRIPTS=~/cmux-agent-teams/plugins/cmux-agent-teams/skills/cmux-agent-teams/scripts
 
 AGENT_A=$(bash $SCRIPTS/spawn-agent.sh \
   --role "backend-model" \

@@ -1,7 +1,7 @@
 {
   "name": "cmux-agent-teams",
   "description": "Multi-agent parallel execution via cmux panes with file-based IPC message bus and signal synchronization",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "hooks": {
     "Stop": [
       {

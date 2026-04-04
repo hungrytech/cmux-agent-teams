@@ -293,14 +293,25 @@ CLAUDE_PROMPT="Read the task JSON from ${IPC_DIR}/inbox/${AGENT_ID}/ and execute
   echo "echo ''"
   echo "cd '${PROJECT_CWD}'"
   echo ""
-  echo "echo 'Claude Code 실행 중... (작업 완료까지 수 분 소요될 수 있습니다)'"
-  echo "echo '---'"
-  echo ""
-  echo "# -p 모드: 작업 완료 후 자동 종료 → fallback 시그널 발동 → 파이프라인 다음 단계 진행"
-  echo "claude -p --dangerously-skip-permissions --append-system-prompt-file '${PROMPT_FILE}' '${CLAUDE_PROMPT}' 2>&1"
+  echo "# stream-json + -p 모드: 실시간 진행 표시 + 완료 후 자동 종료"
+  echo "claude -p --dangerously-skip-permissions --verbose --output-format stream-json \\"
+  echo "  --append-system-prompt-file '${PROMPT_FILE}' \\"
+  echo "  '${CLAUDE_PROMPT}' 2>/dev/null | \\"
+  echo "while IFS= read -r line; do"
+  echo '  type=$(echo "$line" | jq -r ".type // empty" 2>/dev/null)'
+  echo '  case "$type" in'
+  echo '    assistant)'
+  echo '      echo "$line" | jq -r ".message.content[]? | if .type == \"tool_use\" then \"⚡ \" + .name + \": \" + (.input | tostring | .[0:120]) elif .type == \"text\" then .text else empty end" 2>/dev/null'
+  echo '      ;;'
+  echo '    result)'
+  echo '      echo ""'
+  echo '      echo "✅ Agent 작업 완료"'
+  echo '      ;;'
+  echo '  esac'
+  echo "done"
   echo ""
   echo "echo ''"
-  echo "echo '=== [Agent: ${ROLE}] 작업 완료 ==='"
+  echo "echo '=== [Agent: ${ROLE}] 완료 ==='"
   echo ""
   echo "# 결과 파일이 없으면 기본 결과 생성"
   echo "if [ ! -f '${IPC_DIR}/outbox/${AGENT_ID}.result.json' ]; then"
@@ -311,7 +322,7 @@ CLAUDE_PROMPT="Read the task JSON from ${IPC_DIR}/inbox/${AGENT_ID}/ and execute
   echo "# 완료 시그널 전송 → 오케스트레이터가 다음 단계로 진행"
   echo "echo 'Sending done signal...'"
   echo "cmux wait-for -S '${SESSION_ID}:agent:${AGENT_ID}:done' 2>/dev/null || true"
-  echo "echo 'Done. Pipeline will continue to next step.'"
+  echo "echo 'Pipeline will continue to next step.'"
 } > "$LAUNCHER"
 
 chmod +x "$LAUNCHER"

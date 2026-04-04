@@ -76,51 +76,8 @@ fi
 # ─── 에이전트 ID 생성 ────────────────────────────────
 AGENT_ID="${CUSTOM_AGENT_ID:-$(gen_agent_id "$ROLE")}"
 
-# ─── cmux pane 생성 ──────────────────────────────────
-log_info "Creating pane: direction=${DIRECTION}, role=${ROLE}"
-
-SPLIT_OUTPUT="$(cmux_run new-split "$DIRECTION" 2>&1)"
-# new-split 출력에서 surface ID 추출
-SURFACE_ID="$(echo "$SPLIT_OUTPUT" | grep -oE 'surface:[0-9]+' | head -1 || echo "")"
-
-if [[ -z "$SURFACE_ID" ]]; then
-  # 출력 형태가 다를 수 있으므로 list-panes로 최신 surface 찾기
-  sleep 0.5
-  SURFACE_ID="$(cmux_run list-pane-surfaces 2>/dev/null | tail -1 | grep -oE 'surface:[0-9]+' | head -1 || echo "")"
-fi
-
-if [[ -z "$SURFACE_ID" ]]; then
-  log_error "cmux pane 생성 실패. 출력: ${SPLIT_OUTPUT}"
-  exit 1
-fi
-
-log_info "Pane created: surface=${SURFACE_ID}"
-
 # ─── inbox 디렉터리 생성 ─────────────────────────────
 mkdir -p "${IPC_DIR}/inbox/${AGENT_ID}"
-
-# ─── 에이전트 등록 ───────────────────────────────────
-REGISTRY_JSON=$(jq -n \
-  --arg id "$AGENT_ID" \
-  --arg role "$ROLE" \
-  --arg surface_id "$SURFACE_ID" \
-  --arg cwd "$PROJECT_CWD" \
-  --arg peers "$PEERS" \
-  --arg status "spawning" \
-  --arg registered_at "$(iso_timestamp)" \
-  --argjson timeout "$TIMEOUT" \
-  '{
-    id: $id,
-    role: $role,
-    surface_id: $surface_id,
-    cwd: $cwd,
-    peers: ($peers | split(",") | map(select(. != ""))),
-    status: $status,
-    registered_at: $registered_at,
-    timeout_seconds: $timeout
-  }')
-
-atomic_write "${IPC_DIR}/registry/${AGENT_ID}.json" "$REGISTRY_JSON"
 
 # ─── 작업 메시지를 inbox에 쓰기 ──────────────────────
 TASK_MSG=$(jq -n \
@@ -332,15 +289,49 @@ CLAUDE_PROMPT="Read the task JSON from ${IPC_DIR}/inbox/${AGENT_ID}/ and execute
 chmod +x "$LAUNCHER"
 log_info "Launcher script written: ${LAUNCHER}"
 
-# ─── cmux pane에서 런처 실행 ─────────────────────────
-log_info "Sending command to surface ${SURFACE_ID}"
-cmux_run send --surface "$SURFACE_ID" "bash ${LAUNCHER}"
-sleep 0.5
-cmux_run send-key --surface "$SURFACE_ID" enter
+# ─── cmux workspace 생성 + 런처 실행 ────────────────
+# new-workspace --command 는 workspace 생성과 동시에 명령을 실행한다.
+# send + send-key 방식보다 안정적이며, 에이전트가 별도 탭에서 동작하는 것이 보인다.
+log_info "Creating workspace for agent: ${AGENT_ID}"
 
-# ─── registry 상태 업데이트 ──────────────────────────
-jq '.status = "running"' "${IPC_DIR}/registry/${AGENT_ID}.json" > "${IPC_DIR}/registry/${AGENT_ID}.json.tmp"
-mv "${IPC_DIR}/registry/${AGENT_ID}.json.tmp" "${IPC_DIR}/registry/${AGENT_ID}.json"
+WS_OUTPUT="$(cmux_run new-workspace \
+  --name "[Agent] ${ROLE}" \
+  --cwd "${PROJECT_CWD}" \
+  --command "bash ${LAUNCHER}" 2>&1)"
+
+# workspace 출력에서 surface ID 추출
+SURFACE_ID="$(echo "$WS_OUTPUT" | grep -oE 'surface:[0-9]+' | head -1 || echo "")"
+
+if [[ -z "$SURFACE_ID" ]]; then
+  # tree에서 가장 최근 workspace의 surface 찾기
+  sleep 0.5
+  SURFACE_ID="$(cmux_run tree --all 2>/dev/null | grep 'surface:' | tail -1 | grep -oE 'surface:[0-9]+' | head -1 || echo "unknown")"
+fi
+
+log_info "Workspace created: surface=${SURFACE_ID}"
+
+# ─── 에이전트 등록 (workspace 생성 후 정확한 surface_id로) ──
+REGISTRY_JSON=$(jq -n \
+  --arg id "$AGENT_ID" \
+  --arg role "$ROLE" \
+  --arg surface_id "$SURFACE_ID" \
+  --arg cwd "$PROJECT_CWD" \
+  --arg peers "$PEERS" \
+  --arg status "running" \
+  --arg registered_at "$(iso_timestamp)" \
+  --argjson timeout "$TIMEOUT" \
+  '{
+    id: $id,
+    role: $role,
+    surface_id: $surface_id,
+    cwd: $cwd,
+    peers: ($peers | split(",") | map(select(. != ""))),
+    status: $status,
+    registered_at: $registered_at,
+    timeout_seconds: $timeout
+  }')
+
+atomic_write "${IPC_DIR}/registry/${AGENT_ID}.json" "$REGISTRY_JSON"
 
 log_event "SPAWN" "Agent spawned: ${AGENT_ID} (role=${ROLE}, surface=${SURFACE_ID})"
 log_info "Agent spawned: ${AGENT_ID}"

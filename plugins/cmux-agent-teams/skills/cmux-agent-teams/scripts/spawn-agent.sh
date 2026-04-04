@@ -10,7 +10,12 @@
 #     [--peers <agent-id-1,agent-id-2>] \
 #     [--agent-id <custom-id>] \
 #     [--timeout <seconds>] \
-#     [--model <model-name>]
+#     [--model <model-name>] \
+#     [--sub-agents]
+#
+# --sub-agents: 에이전트가 내부적으로 더 작은 서브에이전트를 스폰할 수 있도록 허용
+#               (teammateMode: in-process, Agent 도구 활성화)
+#               기본값: off (서브에이전트 없이 단독 실행)
 #
 # 출력: agent-id (stdout)
 #
@@ -37,6 +42,7 @@ PEERS=""
 CUSTOM_AGENT_ID=""
 TIMEOUT=300
 MODEL=""
+SUB_AGENTS=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -50,6 +56,7 @@ while [[ $# -gt 0 ]]; do
     --agent-id)   CUSTOM_AGENT_ID="$2"; shift 2 ;;
     --timeout)    TIMEOUT="$2"; shift 2 ;;
     --model)      MODEL="$2"; shift 2 ;;
+    --sub-agents) SUB_AGENTS=true; shift ;;
     *) shift ;;
   esac
 done
@@ -179,6 +186,18 @@ cat ${IPC_DIR}/registry/<agent-id>.json
 "
 fi
 
+# 서브에이전트 안내 (--sub-agents 옵션에 따라)
+SUB_AGENT_INSTRUCTIONS=""
+if [[ "$SUB_AGENTS" == true ]]; then
+  SUB_AGENT_INSTRUCTIONS="
+## 서브에이전트 활용
+작업이 복잡한 경우 Agent 도구로 서브에이전트를 생성하여 병렬로 작업을 분할할 수 있습니다.
+예: 파일 생성은 서브에이전트에게 위임하고, 메인 작업은 직접 수행.
+teammateMode가 in-process로 설정되어 있어 서브에이전트가 이 터미널 내에서 실행됩니다.
+작업이 크면 Agent 도구로 서브에이전트를 적극 활용하세요.
+"
+fi
+
 cat > "$PROMPT_FILE" << PROMPT_EOF
 # Agent Role: ${ROLE}
 # Agent ID: ${AGENT_ID}
@@ -232,17 +251,12 @@ cmux wait-for -S "${SESSION_ID}:agent:${AGENT_ID}:done"
 cmux wait-for -S "${SESSION_ID}:agent:${AGENT_ID}:error"
 \`\`\`
 ${PEER_INSTRUCTIONS}
-## 서브에이전트 활용
-작업이 복잡한 경우 Agent 도구로 서브에이전트를 생성하여 병렬로 작업을 분할할 수 있습니다.
-예: 파일 생성은 서브에이전트에게 위임하고, 메인 작업은 직접 수행.
-teammateMode가 in-process로 설정되어 있어 서브에이전트가 이 터미널 내에서 실행됩니다.
-
+${SUB_AGENT_INSTRUCTIONS}
 ## 중요 규칙 (반드시 따르세요)
 1. 작업 시작 전에 먼저 inbox의 JSON 파일을 읽어서 task_description을 확인하세요
 2. 작업 범위를 벗어나지 마세요
 3. 결과 파일에는 생성/수정한 모든 파일 경로를 기록하세요
 4. 타임아웃: ${TIMEOUT}초 내에 작업을 완료하세요
-5. 작업이 크면 Agent 도구로 서브에이전트를 적극 활용하세요
 
 ## !! 작업 완료 시 반드시 실행할 것 (가장 중요) !!
 작업이 모두 끝나면 **반드시** 아래 두 명령을 Bash 도구로 **순서대로** 실행하세요:
@@ -278,9 +292,11 @@ log_info "System prompt written: ${PROMPT_FILE}"
 # cmux send의 따옴표 문제를 피하기 위해 실행 스크립트를 파일로 생성
 LAUNCHER="${IPC_DIR}/prompts/${AGENT_ID}.launcher.sh"
 
-# 에이전트 팀 설정 JSON 생성 (sub-agent가 더 작은 서브에이전트 스폰 가능)
+# 에이전트 설정 JSON 생성
 AGENT_SETTINGS="${IPC_DIR}/prompts/${AGENT_ID}.settings.json"
-cat > "$AGENT_SETTINGS" << SETTINGS_EOF
+if [[ "$SUB_AGENTS" == true ]]; then
+  # --sub-agents: 서브에이전트 스폰 허용 (teammateMode: in-process)
+  cat > "$AGENT_SETTINGS" << SETTINGS_EOF
 {
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
@@ -291,6 +307,17 @@ cat > "$AGENT_SETTINGS" << SETTINGS_EOF
   }
 }
 SETTINGS_EOF
+  log_info "Sub-agents enabled for ${AGENT_ID}"
+else
+  # 기본: 서브에이전트 없이 단독 실행
+  cat > "$AGENT_SETTINGS" << SETTINGS_EOF
+{
+  "permissions": {
+    "allow": ["Bash", "Read", "Write", "Edit", "Glob", "Grep"]
+  }
+}
+SETTINGS_EOF
+fi
 
 # claude 명령 인자 조립
 CLAUDE_OPTS="--dangerously-skip-permissions --append-system-prompt-file ${PROMPT_FILE} --settings ${AGENT_SETTINGS}"

@@ -681,6 +681,7 @@ cmux pane을 생성하고 Claude Code 에이전트를 실행합니다.
 | `--agent-id` | - | 자동 생성 | 커스텀 에이전트 ID |
 | `--timeout` | - | `300` | 타임아웃 (초) |
 | `--model` | - | (없음) | Claude 모델 |
+| `--sub-agents` | - | off | 서브에이전트 스폰 허용 (teammateMode: in-process) |
 
 **역할 지정 방식:**
 
@@ -975,7 +976,17 @@ cat ~/.claude/cmux-agent-ipc/${SESSION}/registry/*.json | jq 'select(.role | con
 
 ### 개요
 
-cmux-agent-teams가 생성하는 각 에이전트는 단순한 단일 Claude 세션이 아닙니다. 각 에이전트는 Claude Code의 **Agent Teams** 기능이 활성화된 상태로 실행되어, 자신의 작업을 더 작은 서브에이전트로 분할하여 병렬 처리할 수 있습니다.
+서브에이전트는 **선택 기능**입니다. `--sub-agents` 플래그를 추가해야 활성화됩니다. 기본적으로는 각 에이전트가 단독으로 작업합니다.
+
+활성화하면 각 에이전트는 Claude Code의 **Agent Teams** 기능이 활성화된 상태로 실행되어, 자신의 작업을 더 작은 서브에이전트로 분할하여 병렬 처리할 수 있습니다.
+
+```bash
+# 서브에이전트 없이 (기본)
+spawn-agent.sh --role "backend" --task "API 구현"
+
+# 서브에이전트 활성화
+spawn-agent.sh --role "backend" --task "API 구현" --sub-agents
+```
 
 이를 통해 **2단계 병렬화**가 가능합니다:
 - **1단계**: cmux-agent-teams가 작업을 여러 에이전트로 분할 (cmux split pane)

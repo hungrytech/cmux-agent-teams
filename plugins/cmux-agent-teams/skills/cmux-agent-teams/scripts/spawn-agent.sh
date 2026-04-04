@@ -291,61 +291,51 @@ log_info "System prompt written: ${PROMPT_FILE}"
 # cmux send의 따옴표 문제를 피하기 위해 실행 스크립트를 파일로 생성
 LAUNCHER="${IPC_DIR}/prompts/${AGENT_ID}.launcher.sh"
 
-cat > "$LAUNCHER" << LAUNCHER_EOF
-#!/usr/bin/env bash
-cd "${PROJECT_CWD}"
-
-# Claude Code 실행 (--dangerously-skip-permissions: 비대화형에서 도구 사용 허용)
-claude -p \\
-  --dangerously-skip-permissions \\
-  --append-system-prompt-file "${PROMPT_FILE}" \\
-LAUNCHER_EOF
-
-# 선택 옵션 추가
+# claude 명령 인자 조립
+CLAUDE_OPTS="--dangerously-skip-permissions --append-system-prompt-file ${PROMPT_FILE}"
 if [[ -n "$PLUGIN_DIR" ]]; then
-  echo "  --plugin-dir \"${PLUGIN_DIR}\" \\" >> "$LAUNCHER"
+  CLAUDE_OPTS="${CLAUDE_OPTS} --plugin-dir ${PLUGIN_DIR}"
 fi
-
 if [[ -n "$MODEL" ]]; then
-  echo "  --model \"${MODEL}\" \\" >> "$LAUNCHER"
+  CLAUDE_OPTS="${CLAUDE_OPTS} --model ${MODEL}"
 fi
 
-# 프롬프트 (마지막 인자)
-cat >> "$LAUNCHER" << LAUNCHER_EOF
-  "Read the task JSON from ${IPC_DIR}/inbox/${AGENT_ID}/ and execute the task_description. When finished, write your result JSON to ${IPC_DIR}/outbox/${AGENT_ID}.result.json and then run this exact command: cmux wait-for -S ${SESSION_ID}:agent:${AGENT_ID}:done"
+CLAUDE_PROMPT="Read the task JSON from ${IPC_DIR}/inbox/${AGENT_ID}/ and execute the task_description. When finished, write your result JSON to ${IPC_DIR}/outbox/${AGENT_ID}.result.json and then run this exact Bash command: cmux wait-for -S ${SESSION_ID}:agent:${AGENT_ID}:done"
 
-# Claude 종료 후 자동으로 완료 시그널 전송 (에이전트가 보내지 못했을 경우 fallback)
-if [ ! -f "${IPC_DIR}/outbox/${AGENT_ID}.result.json" ]; then
-  # 결과 파일이 없으면 기본 결과 생성
-  cat > "${IPC_DIR}/outbox/${AGENT_ID}.result.json" << 'RESULTEOF'
+# 런처 스크립트를 직접 echo로 생성 (heredoc 중첩 문제 회피)
 {
-  "id": "auto-generated",
-  "type": "result",
-  "from": "${AGENT_ID}",
-  "to": "orchestrator",
-  "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "payload": {
-    "status": "completed",
-    "result_summary": "Agent completed (auto-result)",
-    "artifacts": [],
-    "metrics": {}
-  }
-}
-RESULTEOF
-fi
-
-# fallback 시그널 전송
-cmux wait-for -S "${SESSION_ID}:agent:${AGENT_ID}:done" 2>/dev/null || true
-LAUNCHER_EOF
+  echo '#!/usr/bin/env bash'
+  echo "set -e"
+  echo ""
+  echo "echo '[launcher] Starting agent: ${AGENT_ID} (role: ${ROLE})'"
+  echo "echo '[launcher] Working directory: ${PROJECT_CWD}'"
+  echo "cd '${PROJECT_CWD}'"
+  echo ""
+  echo "echo '[launcher] Running Claude Code...'"
+  echo "claude -p ${CLAUDE_OPTS} '${CLAUDE_PROMPT}'"
+  echo ""
+  echo "echo '[launcher] Claude exited. Checking result...'"
+  echo ""
+  echo "# fallback: 결과 파일이 없으면 기본 결과 생성"
+  echo "if [ ! -f '${IPC_DIR}/outbox/${AGENT_ID}.result.json' ]; then"
+  echo "  echo '[launcher] No result file found, creating fallback result'"
+  echo "  TIMESTAMP=\$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  echo "  printf '{\"id\":\"auto\",\"type\":\"result\",\"from\":\"${AGENT_ID}\",\"to\":\"orchestrator\",\"timestamp\":\"%s\",\"payload\":{\"status\":\"completed\",\"result_summary\":\"Agent completed (auto-result)\",\"artifacts\":[],\"metrics\":{}}}' \"\$TIMESTAMP\" > '${IPC_DIR}/outbox/${AGENT_ID}.result.json'"
+  echo "fi"
+  echo ""
+  echo "# fallback 시그널 전송"
+  echo "echo '[launcher] Sending done signal...'"
+  echo "cmux wait-for -S '${SESSION_ID}:agent:${AGENT_ID}:done' 2>/dev/null || true"
+  echo "echo '[launcher] Done.'"
+} > "$LAUNCHER"
 
 chmod +x "$LAUNCHER"
-
 log_info "Launcher script written: ${LAUNCHER}"
 
 # ─── cmux pane에서 런처 실행 ─────────────────────────
 log_info "Sending command to surface ${SURFACE_ID}"
 cmux_run send --surface "$SURFACE_ID" "bash ${LAUNCHER}"
-sleep 0.3
+sleep 0.5
 cmux_run send-key --surface "$SURFACE_ID" enter
 
 # ─── registry 상태 업데이트 ──────────────────────────

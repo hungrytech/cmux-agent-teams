@@ -13,6 +13,19 @@
 #     [--model <model-name>] \
 #     [--sub-agents]
 #
+# --direction: 수동 분할 방향 지정 (생략 시 자동 그리드 레이아웃)
+#   자동 그리드 레이아웃 (행당 최대 3개):
+#     - 첫 번째 에이전트: 위(up)로 분할 → 오케스트레이터가 하단 고정
+#     - 같은 행 추가: 이전 에이전트 오른쪽(right)으로 분할
+#     - 새 행 시작(4번째, 7번째...): 이전 행 첫 에이전트 아래(down)로 분할
+#     ┌─────────┬─────────┬─────────┐
+#     │ Agent-1 │ Agent-2 │ Agent-3 │  row 0
+#     ├─────────┼─────────┼─────────┤
+#     │ Agent-4 │ Agent-5 │ Agent-6 │  row 1
+#     ├─────────┴─────────┴─────────┤
+#     │      Orchestrator (하단)     │
+#     └─────────────────────────────┘
+#
 # --sub-agents: 에이전트가 내부적으로 더 작은 서브에이전트를 스폰할 수 있도록 허용
 #               (teammateMode: in-process, Agent 도구 활성화)
 #               기본값: off (서브에이전트 없이 단독 실행)
@@ -34,7 +47,7 @@ require_cmux
 # ─── 인자 파싱 ───────────────────────────────────────
 ROLE=""
 TASK_DESC=""
-DIRECTION="right"
+DIRECTION=""
 PROJECT_CWD="${PWD}"
 PLUGIN_DIR=""
 SESSION_ID="$(get_session_id)"
@@ -362,16 +375,84 @@ chmod +x "$LAUNCHER"
 log_info "Launcher script written: ${LAUNCHER}"
 
 # ─── cmux 분할 창에서 런처 실행 ────────────────────────
-# 현재 workspace 내에서 split pane으로 생성하여 바로 옆에서 볼 수 있도록 한다.
-log_info "Creating split pane: direction=${DIRECTION}, agent=${AGENT_ID}"
+# 그리드 레이아웃 전략:
+#   - 행당 최대 3개 에이전트 (MAX_COLS=3)
+#   - 첫 번째 에이전트: 오케스트레이터 위로 분할 (up)
+#   - 같은 행 추가: 이전 에이전트 오른쪽으로 분할 (right)
+#   - 새 행 시작: 이전 행 첫 번째 에이전트 아래로 분할 (down)
+#   - 오케스트레이터는 항상 하단 고정
+#
+# 결과 레이아웃 (6개 에이전트 예시):
+#   ┌─────────┬─────────┬─────────┐
+#   │ Agent-1 │ Agent-2 │ Agent-3 │  ← row 0
+#   ├─────────┼─────────┼─────────┤
+#   │ Agent-4 │ Agent-5 │ Agent-6 │  ← row 1
+#   ├─────────┴─────────┴─────────┤
+#   │      Orchestrator (하단)     │
+#   └─────────────────────────────┘
 
-SPLIT_OUTPUT="$(cmux_run new-split "$DIRECTION" 2>&1)"
-SURFACE_ID="$(echo "$SPLIT_OUTPUT" | grep -oE 'surface:[0-9]+' | head -1 || echo "")"
+MAX_COLS=3
+GRID_FILE="${IPC_DIR}/.agent-grid.json"
 
-if [[ -z "$SURFACE_ID" ]]; then
-  sleep 0.5
-  SURFACE_ID="$(cmux_run tree 2>/dev/null | grep 'surface:' | tail -1 | grep -oE 'surface:[0-9]+' | head -1 || echo "unknown")"
+# 그리드 상태 초기화 또는 읽기
+if [[ ! -f "$GRID_FILE" ]]; then
+  echo '{"count":0,"grid":[]}' > "$GRID_FILE"
 fi
+
+GRID_COUNT=$(jq -r '.count' "$GRID_FILE")
+GRID_ROW=$((GRID_COUNT / MAX_COLS))
+GRID_COL=$((GRID_COUNT % MAX_COLS))
+
+extract_surface() {
+  local output="$1"
+  echo "$output" | grep -oE 'surface:[0-9]+' | head -1 || echo ""
+}
+
+fallback_surface() {
+  sleep 0.5
+  cmux_run tree 2>/dev/null | grep 'surface:' | tail -1 | grep -oE 'surface:[0-9]+' | head -1 || echo "unknown"
+}
+
+if [[ -n "$DIRECTION" ]]; then
+  # 수동 모드: --direction이 명시적으로 지정된 경우 그대로 사용
+  log_info "Creating split pane (manual): direction=${DIRECTION}, agent=${AGENT_ID}"
+  SPLIT_OUTPUT="$(cmux_run new-split "$DIRECTION" 2>&1)"
+  SURFACE_ID="$(extract_surface "$SPLIT_OUTPUT")"
+  [[ -z "$SURFACE_ID" ]] && SURFACE_ID="$(fallback_surface)"
+
+elif [[ $GRID_COUNT -eq 0 ]]; then
+  # 첫 번째 에이전트: 위로 분할 (오케스트레이터 하단 고정)
+  log_info "Creating first agent pane (up): row=0, col=0, agent=${AGENT_ID}"
+  SPLIT_OUTPUT="$(cmux_run new-split up 2>&1)"
+  SURFACE_ID="$(extract_surface "$SPLIT_OUTPUT")"
+  [[ -z "$SURFACE_ID" ]] && SURFACE_ID="$(fallback_surface)"
+
+elif [[ $GRID_COL -eq 0 ]]; then
+  # 새 행 시작: 이전 행의 첫 번째 에이전트 아래로 분할
+  PREV_ROW=$((GRID_ROW - 1))
+  PREV_ROW_FIRST=$(jq -r ".grid[] | select(.row == ${PREV_ROW} and .col == 0) | .surface" "$GRID_FILE")
+  log_info "Creating new row (down from ${PREV_ROW_FIRST}): row=${GRID_ROW}, col=0, agent=${AGENT_ID}"
+  SPLIT_OUTPUT="$(cmux_run new-split down --surface "$PREV_ROW_FIRST" 2>&1)"
+  SURFACE_ID="$(extract_surface "$SPLIT_OUTPUT")"
+  [[ -z "$SURFACE_ID" ]] && SURFACE_ID="$(fallback_surface)"
+
+else
+  # 같은 행 추가: 직전 에이전트 오른쪽으로 분할
+  PREV_COL=$((GRID_COL - 1))
+  PREV_SURFACE=$(jq -r ".grid[] | select(.row == ${GRID_ROW} and .col == ${PREV_COL}) | .surface" "$GRID_FILE")
+  log_info "Creating agent pane (right of ${PREV_SURFACE}): row=${GRID_ROW}, col=${GRID_COL}, agent=${AGENT_ID}"
+  SPLIT_OUTPUT="$(cmux_run new-split right --surface "$PREV_SURFACE" 2>&1)"
+  SURFACE_ID="$(extract_surface "$SPLIT_OUTPUT")"
+  [[ -z "$SURFACE_ID" ]] && SURFACE_ID="$(fallback_surface)"
+fi
+
+# 그리드 상태 업데이트
+jq --arg surface "$SURFACE_ID" \
+   --argjson row "$GRID_ROW" \
+   --argjson col "$GRID_COL" \
+   --arg agent_id "$AGENT_ID" \
+   '.count += 1 | .grid += [{"surface": $surface, "row": $row, "col": $col, "agent_id": $agent_id}]' \
+   "$GRID_FILE" > "${GRID_FILE}.tmp" && mv "${GRID_FILE}.tmp" "$GRID_FILE"
 
 log_info "Split pane created: surface=${SURFACE_ID}"
 

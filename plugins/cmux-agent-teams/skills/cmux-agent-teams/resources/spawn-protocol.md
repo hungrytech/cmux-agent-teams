@@ -33,7 +33,7 @@
 
 | 인자 | 기본값 | 설명 |
 |------|--------|------|
-| `--direction` | `right` | cmux split 방향 (right, down, left, up) |
+| `--direction` | 자동 레이아웃 | cmux split 방향 수동 지정 (right, down, left, up). 생략 시 자동: 첫 에이전트=up, 이후=right (오케스트레이터 하단 고정) |
 | `--cwd` | 현재 디렉터리 | 에이전트 작업 디렉터리 |
 | `--plugin-dir` | (없음) | Claude Code skill 플러그인 경로 |
 | `--session` | `$CMUX_AGENT_SESSION` | 세션 ID |

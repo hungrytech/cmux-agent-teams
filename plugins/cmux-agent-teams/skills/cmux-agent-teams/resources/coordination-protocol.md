@@ -88,9 +88,10 @@ Orchestrator ──spawn──→ Agent-A ─┐
 
 ```bash
 # 1. 모든 에이전트 동시 생성
-AGENT_A=$(spawn-agent.sh --role "auth-module" --task "인증 모듈 구현" --direction right)
-AGENT_B=$(spawn-agent.sh --role "order-module" --task "주문 모듈 구현" --direction down)
-AGENT_C=$(spawn-agent.sh --role "notification-module" --task "알림 모듈 구현" --direction down)
+# --direction 생략 시 자동 레이아웃: 첫 에이전트=위, 이후=오른쪽 (오케스트레이터 하단 고정)
+AGENT_A=$(spawn-agent.sh --role "auth-module" --task "인증 모듈 구현")
+AGENT_B=$(spawn-agent.sh --role "order-module" --task "주문 모듈 구현")
+AGENT_C=$(spawn-agent.sh --role "notification-module" --task "알림 모듈 구현")
 
 # 2. 모든 에이전트 완료 대기
 wait-signal.sh --name "agent:${AGENT_A}:done" --timeout 300 &
@@ -146,15 +147,14 @@ Agent-A (설계) → Agent-B (리뷰) → issues? → Agent-A (수정) → Agent
 MAX_ITERATIONS=2
 ITERATION=0
 
-AGENT_A=$(spawn-agent.sh --role "api-designer" --task "API 설계" --direction right)
+AGENT_A=$(spawn-agent.sh --role "api-designer" --task "API 설계")
 
 while [[ $ITERATION -lt $MAX_ITERATIONS ]]; do
   wait-signal.sh --name "agent:${AGENT_A}:done" --timeout 300
 
   # 리뷰 에이전트 실행
   AGENT_B=$(spawn-agent.sh --role "code-reviewer" \
-    --task "Agent-A 결과 리뷰: ${IPC_DIR}/outbox/${AGENT_A}.result.json" \
-    --direction down)
+    --task "Agent-A 결과 리뷰: ${IPC_DIR}/outbox/${AGENT_A}.result.json")
   wait-signal.sh --name "agent:${AGENT_B}:done" --timeout 300
 
   # 리뷰 결과 확인

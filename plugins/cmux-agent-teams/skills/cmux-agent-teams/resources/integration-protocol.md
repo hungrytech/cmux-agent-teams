@@ -18,7 +18,7 @@ export CMUX_AGENT_SESSION=$SESSION
 
 # 2. 에이전트 생성 (커스텀 역할)
 AGENT_A=$(bash spawn-agent.sh --role "backend" --task "REST API 구현")
-AGENT_B=$(bash spawn-agent.sh --role "frontend" --task "API 연동" --direction down)
+AGENT_B=$(bash spawn-agent.sh --role "frontend" --task "API 연동")
 
 # 3. 조율
 bash wait-signal.sh --name "agent:${AGENT_A}:done"

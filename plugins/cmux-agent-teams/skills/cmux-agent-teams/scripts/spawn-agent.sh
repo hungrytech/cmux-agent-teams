@@ -232,11 +232,17 @@ cmux wait-for -S "${SESSION_ID}:agent:${AGENT_ID}:done"
 cmux wait-for -S "${SESSION_ID}:agent:${AGENT_ID}:error"
 \`\`\`
 ${PEER_INSTRUCTIONS}
+## 서브에이전트 활용
+작업이 복잡한 경우 Agent 도구로 서브에이전트를 생성하여 병렬로 작업을 분할할 수 있습니다.
+예: 파일 생성은 서브에이전트에게 위임하고, 메인 작업은 직접 수행.
+teammateMode가 in-process로 설정되어 있어 서브에이전트가 이 터미널 내에서 실행됩니다.
+
 ## 중요 규칙 (반드시 따르세요)
 1. 작업 시작 전에 먼저 inbox의 JSON 파일을 읽어서 task_description을 확인하세요
 2. 작업 범위를 벗어나지 마세요
 3. 결과 파일에는 생성/수정한 모든 파일 경로를 기록하세요
 4. 타임아웃: ${TIMEOUT}초 내에 작업을 완료하세요
+5. 작업이 크면 Agent 도구로 서브에이전트를 적극 활용하세요
 
 ## !! 작업 완료 시 반드시 실행할 것 (가장 중요) !!
 작업이 모두 끝나면 **반드시** 아래 두 명령을 Bash 도구로 **순서대로** 실행하세요:
@@ -272,8 +278,22 @@ log_info "System prompt written: ${PROMPT_FILE}"
 # cmux send의 따옴표 문제를 피하기 위해 실행 스크립트를 파일로 생성
 LAUNCHER="${IPC_DIR}/prompts/${AGENT_ID}.launcher.sh"
 
+# 에이전트 팀 설정 JSON 생성 (sub-agent가 더 작은 서브에이전트 스폰 가능)
+AGENT_SETTINGS="${IPC_DIR}/prompts/${AGENT_ID}.settings.json"
+cat > "$AGENT_SETTINGS" << SETTINGS_EOF
+{
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
+  "teammateMode": "in-process",
+  "permissions": {
+    "allow": ["Agent", "Bash", "Read", "Write", "Edit", "Glob", "Grep"]
+  }
+}
+SETTINGS_EOF
+
 # claude 명령 인자 조립
-CLAUDE_OPTS="--dangerously-skip-permissions --append-system-prompt-file ${PROMPT_FILE}"
+CLAUDE_OPTS="--dangerously-skip-permissions --append-system-prompt-file ${PROMPT_FILE} --settings ${AGENT_SETTINGS}"
 if [[ -n "$PLUGIN_DIR" ]]; then
   CLAUDE_OPTS="${CLAUDE_OPTS} --plugin-dir ${PLUGIN_DIR}"
 fi

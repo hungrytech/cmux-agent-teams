@@ -30,7 +30,7 @@ AGENT_A=$(spawn-agent.sh --role "backend-model" --task "Entity 설계")
 wait-signal.sh --name "agent:${AGENT_A}:done" --timeout 300
 
 # 3. 결과 읽기
-RESULT_A=$(cat /tmp/cmux-agent-ipc/${SESSION}/outbox/${AGENT_A}.result.json)
+RESULT_A=$(cat ~/.claude/cmux-agent-ipc/${SESSION}/outbox/${AGENT_A}.result.json)
 
 # 4. 다음 에이전트에 결과 전달
 AGENT_B=$(spawn-agent.sh --role "backend-service" \
@@ -242,8 +242,8 @@ Agent-B ──peer-response + signal──→ Agent-A (필요 시)
 
 ```bash
 # registry에서 특정 역할의 에이전트 찾기
-ls /tmp/cmux-agent-ipc/${SESSION}/registry/
-cat /tmp/cmux-agent-ipc/${SESSION}/registry/*.json | jq 'select(.role == "backend-service")'
+ls ~/.claude/cmux-agent-ipc/${SESSION}/registry/
+cat ~/.claude/cmux-agent-ipc/${SESSION}/registry/*.json | jq 'select(.role == "backend-service")'
 ```
 
 ### 예시: 백엔드 레이어 간 P2P

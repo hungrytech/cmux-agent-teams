@@ -259,7 +259,7 @@ bash $SCRIPTS/wait-signal.sh --name "agent:${AGENT_A}:done" --timeout 300
 bash $SCRIPTS/send-message.sh \
   --to "$AGENT_B" \
   --type "peer-request" \
-  --payload "{\"task_description\":\"Agent-A 결과 참조하여 Service 구현 시작\",\"artifacts\":[\"$(cat /tmp/cmux-agent-ipc/$SESSION/outbox/$AGENT_A.result.json | jq -r '.payload.artifacts[]')\"]}" \
+  --payload "{\"task_description\":\"Agent-A 결과 참조하여 Service 구현 시작\",\"artifacts\":[\"$(cat ~/.claude/cmux-agent-ipc/$SESSION/outbox/$AGENT_A.result.json | jq -r '.payload.artifacts[]')\"]}" \
   --signal
 
 # 5. Agent-B 완료 대기
@@ -293,7 +293,7 @@ bash $SCRIPTS/cleanup-session.sh --close-panes
 │                  │                 │                            │
 │         ┌────────▼─────────────────▼────────┐                  │
 │         │     File-based IPC Message Bus     │                  │
-│         │  /tmp/cmux-agent-ipc/{session}/    │                  │
+│         │  ~/.claude/cmux-agent-ipc/{session}/    │                  │
 │         │                                    │                  │
 │         │  registry/  inbox/  outbox/        │                  │
 │         │  prompts/   signals/               │                  │
@@ -325,7 +325,7 @@ Phase 5: Cleanup  ─── IPC 디렉터리 정리, pane 종료 (선택)
 ### IPC 디렉터리 구조
 
 ```
-/tmp/cmux-agent-ipc/{session-id}/
+~/.claude/cmux-agent-ipc/{session-id}/
 ├── session.json                    # 세션 메타데이터 (ID, 프로젝트 경로, 설정)
 ├── events.log                      # 이벤트 로그 (디버깅용)
 ├── cmux-debug.log                  # cmux 명령 로그
@@ -360,7 +360,7 @@ cmux-agent-teams는 두 가지 통신 메커니즘을 조합합니다:
 **1. 파일 기반 메시지 (데이터 전달)**
 
 에이전트 간 구조화된 데이터(작업 내용, 결과, 파일 목록 등)를 JSON 파일로 교환합니다.
-`/tmp/` 파일 시스템을 사용하며, 원자적 쓰기(`mv`)로 레이스 컨디션을 방지합니다.
+`~/.claude/cmux-agent-ipc/` 디렉터리를 사용하며(Claude Code 샌드박스 허용 경로), 원자적 쓰기(`mv`)로 레이스 컨디션을 방지합니다.
 
 ```
 Agent-A writes → inbox/Agent-B/<uuid>.json
@@ -641,7 +641,7 @@ IPC 세션을 초기화합니다. 모든 다른 스크립트보다 먼저 실행
 |------|------|
 | **사용법** | `init-session.sh [--cwd <path>] [--session <id>]` |
 | **출력** | session-id (stdout) |
-| **부작용** | `/tmp/cmux-agent-ipc/{session-id}/` 디렉터리 생성 |
+| **부작용** | `~/.claude/cmux-agent-ipc/{session-id}/` 디렉터리 생성 |
 | **종료코드** | 0: 성공, 1: jq/cmux 없음 |
 
 | 인자 | 기본값 | 설명 |
@@ -962,10 +962,10 @@ Backend Agent-A (모델)              Backend Agent-B (서비스)
 
 ```bash
 # 모든 에이전트 목록
-ls /tmp/cmux-agent-ipc/${SESSION}/registry/
+ls ~/.claude/cmux-agent-ipc/${SESSION}/registry/
 
 # 특정 역할의 에이전트 찾기
-cat /tmp/cmux-agent-ipc/${SESSION}/registry/*.json | jq 'select(.role | contains("backend"))'
+cat ~/.claude/cmux-agent-ipc/${SESSION}/registry/*.json | jq 'select(.role | contains("backend"))'
 ```
 
 ---
@@ -1018,7 +1018,7 @@ cmux가 없는 환경에서는 기존 sister-skill invoke 방식으로 동작합
 | 최대 동시 에이전트 | 6개 (권장) | 터미널 공간 + 시스템 리소스 |
 | 기본 타임아웃 | 300초 (5분) | 개별 에이전트 |
 | 최대 피드백 반복 | 2회 | 무한 루프 방지 |
-| IPC 디렉터리 | `/tmp/` | OS 재부팅 시 삭제됨 |
+| IPC 디렉터리 | `~/.claude/cmux-agent-ipc/` | Claude Code 샌드박스 허용 경로 |
 | cmux 필수 | cmux 앱 실행 중이어야 함 | cmux socket 통신 |
 
 ### 트러블슈팅
@@ -1040,7 +1040,7 @@ cmux tree
 
 에이전트 등록 정보 확인:
 ```bash
-cat /tmp/cmux-agent-ipc/${CMUX_AGENT_SESSION}/registry/*.json | jq .
+cat ~/.claude/cmux-agent-ipc/${CMUX_AGENT_SESSION}/registry/*.json | jq .
 ```
 
 **Q: 시그널 타임아웃**
@@ -1056,19 +1056,19 @@ cmux read-screen --surface <surface-id> --lines 20
 ```bash
 bash cleanup-session.sh --session <session-id> --close-panes
 # 또는 전체 정리
-rm -rf /tmp/cmux-agent-ipc/
+rm -rf ~/.claude/cmux-agent-ipc/
 ```
 
 **Q: 에이전트가 다른 에이전트의 결과를 읽지 못함**
 
 outbox 파일이 존재하는지 확인:
 ```bash
-ls /tmp/cmux-agent-ipc/${CMUX_AGENT_SESSION}/outbox/
+ls ~/.claude/cmux-agent-ipc/${CMUX_AGENT_SESSION}/outbox/
 ```
 
 시그널이 정상 전송되었는지 확인:
 ```bash
-cat /tmp/cmux-agent-ipc/${CMUX_AGENT_SESSION}/signals/signal.log
+cat ~/.claude/cmux-agent-ipc/${CMUX_AGENT_SESSION}/signals/signal.log
 ```
 
 ---

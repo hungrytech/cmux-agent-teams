@@ -5,7 +5,7 @@
 set -euo pipefail
 
 # ─── ���수 ────────────────────────────────────────────
-IPC_BASE="/tmp/cmux-agent-ipc"
+IPC_BASE="${HOME}/.claude/cmux-agent-ipc"
 CMUX_BIN="${CMUX_BIN:-cmux}"
 
 # ─���─ 세션 ID ─────────────────────────────────────────

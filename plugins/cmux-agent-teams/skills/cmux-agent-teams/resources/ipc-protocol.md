@@ -5,12 +5,12 @@
 ## 개요
 
 cmux-agent-teams의 에이전트 간 통신은 **파일 기반 IPC**와 **cmux wait-for 시그널**을 조합하여 구현한다.
-cmux buffer는 paste-only라 프로그래밍 방식의 읽기가 불편하므로, `/tmp/` 파일 시스템을 메시지 버스로 사용한다.
+cmux buffer는 paste-only라 프로그래밍 방식의 읽기가 불편하므로, `~/.claude/cmux-agent-ipc/` 디렉터리를 메시지 버스로 사용한다. Claude Code 샌드박스가 기본 허용하는 경로이다.
 
 ## 디렉터리 구조
 
 ```
-/tmp/cmux-agent-ipc/{session-id}/
+~/.claude/cmux-agent-ipc/{session-id}/
 ├── session.json                    # 세션 메타데이터
 ├── events.log                      # 이벤트 로그
 ├── cmux-debug.log                  # cmux 명령 디버그 로그

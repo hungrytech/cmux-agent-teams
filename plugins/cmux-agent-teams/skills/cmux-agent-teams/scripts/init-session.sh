@@ -2,7 +2,7 @@
 # init-session.sh — IPC 세션 초기화
 # 사용법: init-session.sh [--cwd <project-dir>]
 # 출력: session-id (stdout)
-# 부작용: /tmp/cmux-agent-ipc/{session-id}/ 디렉터리 생성
+# 부작용: ~/.claude/cmux-agent-ipc/{session-id}/ 디렉터리 생성
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/_common.sh"

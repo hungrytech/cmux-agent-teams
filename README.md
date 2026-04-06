@@ -796,6 +796,44 @@ When `--direction` is omitted, agents are arranged in a grid of up to 3 per row.
 - 2nd–3rd agents in same row: split right of the previous agent
 - New row (4th, 7th, 10th...): split down from the first agent of the previous row
 
+**Pane 자동 재활용:**
+
+Pipeline이나 Hybrid에서 Stage 전환 시, `reset-grid-cursor.sh`를 호출하면 기존 pane이 자동으로 재활용됩니다. 불필요한 pane 증가가 없습니다:
+
+```bash
+# Stage A: 3개 에이전트 실행 (3개 pane 생성)
+AGENT_A1=$(spawn-agent.sh --role "entity" --task "Entity 설계")
+AGENT_A2=$(spawn-agent.sh --role "service" --task "Service 설계")
+AGENT_A3=$(spawn-agent.sh --role "controller" --task "Controller 설계")
+
+# Stage A 완료 대기
+wait-signal.sh --name "agent:${AGENT_A1}:done"
+wait-signal.sh --name "agent:${AGENT_A2}:done"
+wait-signal.sh --name "agent:${AGENT_A3}:done"
+
+# cursor 리셋 → 다음 Stage에서 기존 pane 자동 재활용
+reset-grid-cursor.sh
+
+# Stage B: 같은 3개 pane에서 새 에이전트가 자동 실행 (pane 추가 없음)
+AGENT_B1=$(spawn-agent.sh --role "test" --task "테스트 작성")
+AGENT_B2=$(spawn-agent.sh --role "docs" --task "문서 작성")
+AGENT_B3=$(spawn-agent.sh --role "review" --task "코드 리뷰")
+```
+
+기존 pane 수보다 새 에이전트가 많으면 초과분은 자동으로 새 pane이 생성됩니다.
+
+---
+
+### reset-grid-cursor.sh
+
+그리드의 reuse cursor를 0으로 리셋합니다. Stage 전환 시 `--reuse-grid` 사용 전에 호출합니다.
+
+| 항목 | 내용 |
+|------|------|
+| **사용법** | `reset-grid-cursor.sh [--session <session-id>]` |
+| **부작용** | `.agent-grid.json`의 `reuse_cursor`를 0으로 리셋 |
+| **종료코드** | 0: 성공, 1: grid 파일 없음 |
+
 ---
 
 ### send-message.sh

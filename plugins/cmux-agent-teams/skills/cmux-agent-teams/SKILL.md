@@ -9,7 +9,7 @@ description: >-
   Activated by keywords: "agent team", "parallel agents", "multi-agent",
   "에이��트 팀", "병렬 실행", "멀티 에이전트", "cmux team", "spawn agents",
   "병렬 개발", "에이전트 협업".
-version: 0.1.4
+version: 0.1.5
 argument-hint: "[pipeline|fanout|feedback|hybrid] [--sub-agents] <task-description>"
 user-invocable: true
 allowed-tools:
@@ -100,6 +100,7 @@ Phase 5: Cleanup  ─── IPC 디렉터리 정리, pane 종료 (선택)
 | `scripts/check-agent-health.sh` | 에이전트 상태 확인 | 3 |
 | `scripts/list-agents.sh` | 등록된 에이전트 목록 | 3, 4 |
 | `scripts/monitor-agents.sh` | 전체 에이전트 모니터링 | 3 |
+| `scripts/reset-grid-cursor.sh` | 그리드 reuse cursor 리셋 | 3 |
 | `scripts/cleanup-session.sh` | IPC 정리 + pane 종료 | 5 |
 
 ## Templates
@@ -199,6 +200,28 @@ Plan → Spawn → Execute → Collect → Cleanup 전체 자동 실행
 - **Fanout**: 모든 에이전트 wait-signal 병렬 대기
 - **Feedback**: 반복 루프 (max 2 iterations)
 - **P2P**: monitor-agents로 완료 감시 (에이전트가 자율 조율)
+
+### Pane 자동 재활용
+
+Pipeline이나 Hybrid에서 여러 Stage를 거칠 때, Stage A에서 만든 pane을 Stage B에서 자동으로 재활용한다.
+**새 pane을 추가로 만들지 않으므로** 화면이 불필요하게 분할되지 않는다.
+
+```
+Stage A: 3개 pane 생성 (Entity, Service, Controller)
+    ↓ Stage A 완료
+reset-grid-cursor.sh   ← cursor를 0으로 리셋
+    ↓
+Stage B: spawn-agent.sh → 기존 3개 pane 자동 재활용 (Test, Docs, Deploy)
+    → 동일한 3개 pane에서 새 에이전트가 실행됨
+```
+
+**사용법:**
+1. Stage 완료 후 `reset-grid-cursor.sh` 실행
+2. 다음 Stage에서 `spawn-agent.sh` 호출 → 기존 pane 자동 재활용
+3. 기존 pane 수보다 새 에이전트가 많으면 초과분은 자동으로 새 pane 생성
+
+Stage A에서 3개, Stage B에서 5개가 필요한 경우:
+→ 기존 3개 pane 재활용 + 2개 새 pane 자동 생성
 
 ## Phase 4: Collect 상세
 

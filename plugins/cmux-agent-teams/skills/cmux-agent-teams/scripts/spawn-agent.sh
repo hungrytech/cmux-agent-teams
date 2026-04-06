@@ -30,6 +30,11 @@
 #               (teammateMode: in-process, Agent 도구 활성화)
 #               기본값: off (서브에이전트 없이 단독 실행)
 #
+# Pane 재활용 (자동):
+#   Stage 전환 시 reset-grid-cursor.sh를 호출하면,
+#   다음 spawn-agent.sh 호출 시 기존 pane을 자동으로 재활용한다.
+#   기존 pane이 모두 소진되면 자동으로 새 pane 생성 (그리드 확장)
+#
 # 출력: agent-id (stdout)
 #
 # --role은 자유 텍스트:
@@ -59,17 +64,17 @@ SUB_AGENTS=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --role)       ROLE="$2"; shift 2 ;;
-    --task)       TASK_DESC="$2"; shift 2 ;;
-    --direction)  DIRECTION="$2"; shift 2 ;;
-    --cwd)        PROJECT_CWD="$2"; shift 2 ;;
-    --plugin-dir) PLUGIN_DIR="$2"; shift 2 ;;
-    --session)    SESSION_ID="$2"; shift 2 ;;
-    --peers)      PEERS="$2"; shift 2 ;;
-    --agent-id)   CUSTOM_AGENT_ID="$2"; shift 2 ;;
-    --timeout)    TIMEOUT="$2"; shift 2 ;;
-    --model)      MODEL="$2"; shift 2 ;;
-    --sub-agents) SUB_AGENTS=true; shift ;;
+    --role)        ROLE="$2"; shift 2 ;;
+    --task)        TASK_DESC="$2"; shift 2 ;;
+    --direction)   DIRECTION="$2"; shift 2 ;;
+    --cwd)         PROJECT_CWD="$2"; shift 2 ;;
+    --plugin-dir)  PLUGIN_DIR="$2"; shift 2 ;;
+    --session)     SESSION_ID="$2"; shift 2 ;;
+    --peers)       PEERS="$2"; shift 2 ;;
+    --agent-id)    CUSTOM_AGENT_ID="$2"; shift 2 ;;
+    --timeout)     TIMEOUT="$2"; shift 2 ;;
+    --model)       MODEL="$2"; shift 2 ;;
+    --sub-agents)  SUB_AGENTS=true; shift ;;
     *) shift ;;
   esac
 done
@@ -396,7 +401,12 @@ GRID_FILE="${IPC_DIR}/.agent-grid.json"
 
 # 그리드 상태 초기화 또는 읽기
 if [[ ! -f "$GRID_FILE" ]]; then
-  echo '{"count":0,"grid":[]}' > "$GRID_FILE"
+  echo '{"count":0,"grid":[],"reuse_cursor":0}' > "$GRID_FILE"
+fi
+
+# reuse_cursor 필드가 없으면 추가 (기존 grid 호환)
+if [[ "$(jq 'has("reuse_cursor")' "$GRID_FILE")" != "true" ]]; then
+  jq '.reuse_cursor = 0' "$GRID_FILE" > "${GRID_FILE}.tmp" && mv "${GRID_FILE}.tmp" "$GRID_FILE"
 fi
 
 GRID_COUNT=$(jq -r '.count' "$GRID_FILE")
@@ -413,50 +423,81 @@ fallback_surface() {
   cmux_run tree 2>/dev/null | grep 'surface:' | tail -1 | grep -oE 'surface:[0-9]+' | head -1 || echo "unknown"
 }
 
-if [[ -n "$DIRECTION" ]]; then
-  # 수동 모드: --direction이 명시적으로 지정된 경우 그대로 사용
-  log_info "Creating split pane (manual): direction=${DIRECTION}, agent=${AGENT_ID}"
-  SPLIT_OUTPUT="$(cmux_run new-split "$DIRECTION" 2>&1)"
-  SURFACE_ID="$(extract_surface "$SPLIT_OUTPUT")"
-  [[ -z "$SURFACE_ID" ]] && SURFACE_ID="$(fallback_surface)"
+REUSED_PANE=false
 
-elif [[ $GRID_COUNT -eq 0 ]]; then
-  # 첫 번째 에이전트: 위로 분할 (오케스트레이터 하단 고정)
-  log_info "Creating first agent pane (up): row=0, col=0, agent=${AGENT_ID}"
-  SPLIT_OUTPUT="$(cmux_run new-split up 2>&1)"
-  SURFACE_ID="$(extract_surface "$SPLIT_OUTPUT")"
-  [[ -z "$SURFACE_ID" ]] && SURFACE_ID="$(fallback_surface)"
+# ─── 자동 pane 재활용 ──────────────────────────────────
+# reuse_cursor가 기존 grid 항목 수보다 작으면 기존 pane을 재활용.
+# Stage A에서 3개 pane 생성 → reset-grid-cursor.sh 호출 →
+# Stage B에서 자동으로 기존 3개 pane을 순서대로 재활용.
+# 기존 pane이 모두 소진되면 새 pane을 생성 (그리드 확장).
 
-elif [[ $GRID_COL -eq 0 ]]; then
-  # 새 행 시작: 이전 행의 첫 번째 에이전트 아래로 분할
-  PREV_ROW=$((GRID_ROW - 1))
-  PREV_ROW_FIRST=$(jq -r ".grid[] | select(.row == ${PREV_ROW} and .col == 0) | .surface" "$GRID_FILE")
-  log_info "Creating new row (down from ${PREV_ROW_FIRST}): row=${GRID_ROW}, col=0, agent=${AGENT_ID}"
-  SPLIT_OUTPUT="$(cmux_run new-split down --surface "$PREV_ROW_FIRST" 2>&1)"
-  SURFACE_ID="$(extract_surface "$SPLIT_OUTPUT")"
-  [[ -z "$SURFACE_ID" ]] && SURFACE_ID="$(fallback_surface)"
+REUSE_CURSOR=$(jq -r '.reuse_cursor' "$GRID_FILE")
+GRID_TOTAL=$(jq -r '.grid | length' "$GRID_FILE")
 
-else
-  # 같은 행 추가: 직전 에이전트 오른쪽으로 분할
-  PREV_COL=$((GRID_COL - 1))
-  PREV_SURFACE=$(jq -r ".grid[] | select(.row == ${GRID_ROW} and .col == ${PREV_COL}) | .surface" "$GRID_FILE")
-  log_info "Creating agent pane (right of ${PREV_SURFACE}): row=${GRID_ROW}, col=${GRID_COL}, agent=${AGENT_ID}"
-  SPLIT_OUTPUT="$(cmux_run new-split right --surface "$PREV_SURFACE" 2>&1)"
-  SURFACE_ID="$(extract_surface "$SPLIT_OUTPUT")"
-  [[ -z "$SURFACE_ID" ]] && SURFACE_ID="$(fallback_surface)"
+if [[ $REUSE_CURSOR -lt $GRID_TOTAL ]]; then
+  # 기존 pane 재활용
+  SURFACE_ID=$(jq -r ".grid[${REUSE_CURSOR}].surface" "$GRID_FILE")
+  REUSE_ROW=$(jq -r ".grid[${REUSE_CURSOR}].row" "$GRID_FILE")
+  REUSE_COL=$(jq -r ".grid[${REUSE_CURSOR}].col" "$GRID_FILE")
+  log_info "Reusing pane (cursor=${REUSE_CURSOR}, surface=${SURFACE_ID}): row=${REUSE_ROW}, col=${REUSE_COL}, agent=${AGENT_ID}"
+
+  # grid 항목을 새 에이전트로 갱신, cursor 전진
+  jq --argjson idx "$REUSE_CURSOR" \
+     --arg agent_id "$AGENT_ID" \
+     '.grid[$idx].agent_id = $agent_id | .reuse_cursor += 1' \
+     "$GRID_FILE" > "${GRID_FILE}.tmp" && mv "${GRID_FILE}.tmp" "$GRID_FILE"
+
+  REUSED_PANE=true
 fi
 
-# 그리드 상태 업데이트
-jq --arg surface "$SURFACE_ID" \
-   --argjson row "$GRID_ROW" \
-   --argjson col "$GRID_COL" \
-   --arg agent_id "$AGENT_ID" \
-   '.count += 1 | .grid += [{"surface": $surface, "row": $row, "col": $col, "agent_id": $agent_id}]' \
-   "$GRID_FILE" > "${GRID_FILE}.tmp" && mv "${GRID_FILE}.tmp" "$GRID_FILE"
+if [[ "$REUSED_PANE" != true ]]; then
+  # ─── 새 pane 생성 (일반 그리드 레이아웃) ────────────────
 
-log_info "Split pane created: surface=${SURFACE_ID}"
+  if [[ -n "$DIRECTION" ]]; then
+    # 수동 모드: --direction이 명시적으로 지정된 경우 그대로 사용
+    log_info "Creating split pane (manual): direction=${DIRECTION}, agent=${AGENT_ID}"
+    SPLIT_OUTPUT="$(cmux_run new-split "$DIRECTION" 2>&1)"
+    SURFACE_ID="$(extract_surface "$SPLIT_OUTPUT")"
+    [[ -z "$SURFACE_ID" ]] && SURFACE_ID="$(fallback_surface)"
 
-# respawn-pane으로 직접 명령 실행 (send+send-key 타이밍 문제 회피)
+  elif [[ $GRID_COUNT -eq 0 ]]; then
+    # 첫 번째 에이전트: 위로 분할 (오케스트레이터 하단 고정)
+    log_info "Creating first agent pane (up): row=0, col=0, agent=${AGENT_ID}"
+    SPLIT_OUTPUT="$(cmux_run new-split up 2>&1)"
+    SURFACE_ID="$(extract_surface "$SPLIT_OUTPUT")"
+    [[ -z "$SURFACE_ID" ]] && SURFACE_ID="$(fallback_surface)"
+
+  elif [[ $GRID_COL -eq 0 ]]; then
+    # 새 행 시작: 이전 행의 첫 번째 에이전트 아래로 분할
+    PREV_ROW=$((GRID_ROW - 1))
+    PREV_ROW_FIRST=$(jq -r ".grid[] | select(.row == ${PREV_ROW} and .col == 0) | .surface" "$GRID_FILE")
+    log_info "Creating new row (down from ${PREV_ROW_FIRST}): row=${GRID_ROW}, col=0, agent=${AGENT_ID}"
+    SPLIT_OUTPUT="$(cmux_run new-split down --surface "$PREV_ROW_FIRST" 2>&1)"
+    SURFACE_ID="$(extract_surface "$SPLIT_OUTPUT")"
+    [[ -z "$SURFACE_ID" ]] && SURFACE_ID="$(fallback_surface)"
+
+  else
+    # 같은 행 추가: 직전 에이전트 오른쪽으로 분할
+    PREV_COL=$((GRID_COL - 1))
+    PREV_SURFACE=$(jq -r ".grid[] | select(.row == ${GRID_ROW} and .col == ${PREV_COL}) | .surface" "$GRID_FILE")
+    log_info "Creating agent pane (right of ${PREV_SURFACE}): row=${GRID_ROW}, col=${GRID_COL}, agent=${AGENT_ID}"
+    SPLIT_OUTPUT="$(cmux_run new-split right --surface "$PREV_SURFACE" 2>&1)"
+    SURFACE_ID="$(extract_surface "$SPLIT_OUTPUT")"
+    [[ -z "$SURFACE_ID" ]] && SURFACE_ID="$(fallback_surface)"
+  fi
+
+  # 그리드 상태 업데이트 (새 pane 추가)
+  jq --arg surface "$SURFACE_ID" \
+     --argjson row "$GRID_ROW" \
+     --argjson col "$GRID_COL" \
+     --arg agent_id "$AGENT_ID" \
+     '.count += 1 | .grid += [{"surface": $surface, "row": $row, "col": $col, "agent_id": $agent_id}]' \
+     "$GRID_FILE" > "${GRID_FILE}.tmp" && mv "${GRID_FILE}.tmp" "$GRID_FILE"
+fi
+
+log_info "Pane ready: surface=${SURFACE_ID} (reused=${REUSED_PANE})"
+
+# respawn-pane으로 명령 실행 (새 pane이든 재활용이든 동일)
 sleep 0.3
 cmux_run respawn-pane --surface "$SURFACE_ID" --command "bash ${LAUNCHER}"
 
